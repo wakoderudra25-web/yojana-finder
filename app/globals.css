@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-rgb: 248, 250, 252;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-rgb));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-tap-highlight-color: transparent;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+/* Simple Mode Accessibility Styles (Larger text, high contrast, clean touch targets) */
+.simple-mode-active {
+  font-size: 1.08rem;
+}
+
+.simple-mode-active h1 {
+  font-size: 2.25rem !important;
+  line-height: 1.25 !important;
+}
+
+.simple-mode-active h2 {
+  font-size: 1.75rem !important;
+}
+
+.simple-mode-active h3 {
+  font-size: 1.4rem !important;
+}
+
+.simple-mode-active p,
+.simple-mode-active li {
+  line-height: 1.6 !important;
+}
