@@ -1,8 +1,8 @@
 -- ==============================================================================
--- YOJANA FINDER: SUPABASE SEED DATA (15 INITIAL GOVERNMENT SCHEMES)
+-- YOJANA FINDER: SUPABASE SEED DATA
+-- Exact SQL INSERT statements for schemes from data/schemes.json
 -- ==============================================================================
 
--- 1. Insert Initial Welfare Schemes
 INSERT INTO schemes (
   id,
   name,
@@ -342,7 +342,7 @@ INSERT INTO schemes (
   'Ministry of Micro, Small and Medium Enterprises',
   'End-to-end support for traditional artisans and craftspeople across 18 trades',
   'Recognition via Vishwakarma certificate, 5-7 days skill training with ₹500/day stipend, ₹15,000 toolkit grant, and up to ₹3,00,000 loan at 5% interest rate.',
-  '₹15,000 Toolkit Incentive + ₹3 Lakh Loan @ 5%',
+  '₹15,00,000 Toolkit Incentive + ₹3 Lakh Loan @ 5%',
   'Artisans and craftspersons working with hands and tools in one of 18 traditional family trades.',
   18,
   NULL,
@@ -616,7 +616,3 @@ ON CONFLICT (id) DO UPDATE SET
   last_date_to_apply = EXCLUDED.last_date_to_apply,
   document_help = EXCLUDED.document_help,
   criteria = EXCLUDED.criteria;
-
--- 2. Optional: Configure Administrator Email
--- Replace with your actual email address to gain admin write/delete access under Row Level Security:
--- INSERT INTO admins (email) VALUES ('your-admin-email@example.com') ON CONFLICT (email) DO NOTHING;
