@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { SAMPLE_SCHEMES } from "@/data/schemes";
+import {
+  supabase,
+  isSupabaseConfigured,
+  mapDatabaseRowToScheme,
+  mapSchemeToDatabaseRow,
+} from "@/lib/supabase";
 
 const schemesFilePath = path.join(process.cwd(), "data", "schemes.json");
 const ADMIN_PASSCODE = process.env.ADMIN_PASSWORD || "admin123";
@@ -45,10 +51,27 @@ function verifyAdminAuth(request: Request): boolean {
   return adminKey === ADMIN_PASSCODE;
 }
 
-// GET: Return all schemes
+// GET: Return all schemes (Queries Supabase with fallback to local storage)
 export async function GET() {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("schemes")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const schemes = data.map(mapDatabaseRowToScheme);
+        return NextResponse.json({ success: true, schemes, source: "supabase" });
+      }
+    } catch (err) {
+      console.warn("Supabase fetch failed in API route, falling back to local file:", err);
+    }
+  }
+
+  // Graceful offline/local fallback
   const schemes = getStoredSchemes();
-  return NextResponse.json({ success: true, schemes });
+  return NextResponse.json({ success: true, schemes, source: "local" });
 }
 
 // POST: Add new scheme (Protected)
@@ -87,7 +110,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const schemes = getStoredSchemes();
     const generatedId =
       body.id?.trim() ||
       name
@@ -109,7 +131,7 @@ export async function POST(request: Request) {
       benefitAmount: benefitAmount.trim(),
       status: status || "Open",
       lastDateToApply: lastDateToApply?.trim() || "Ongoing / Open throughout the year",
-      lastVerified: getCurrentMonthYear(), // Automatically set current month & year
+      lastVerified: getCurrentMonthYear(),
       officialSourceUrl: officialSourceUrl?.trim() || "",
       applyUrl: applyUrl?.trim() || "",
       documentHelp: documentHelp?.trim() || "",
@@ -121,6 +143,21 @@ export async function POST(request: Request) {
       criteria: criteria || {},
     };
 
+    // 1. Sync to Supabase if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const rowData = mapSchemeToDatabaseRow(newScheme);
+        const { error: dbError } = await supabase.from("schemes").upsert([rowData]);
+        if (dbError) {
+          console.warn("Supabase insert warning:", dbError.message);
+        }
+      } catch (dbErr) {
+        console.warn("Failed to insert into Supabase:", dbErr);
+      }
+    }
+
+    // 2. Keep local storage synced for fallback
+    const schemes = getStoredSchemes();
     schemes.unshift(newScheme);
     saveSchemes(schemes);
 
@@ -161,28 +198,40 @@ export async function PUT(request: Request) {
     const schemes = getStoredSchemes();
     const index = schemes.findIndex((s) => s.id === id);
 
-    if (index === -1) {
-      return NextResponse.json(
-        { success: false, error: `Scheme with ID '${id}' not found.` },
-        { status: 404 }
-      );
-    }
-
-    // Automatically update lastVerified to the current month & year
+    const existingScheme = index !== -1 ? schemes[index] : { id };
     const updatedScheme = {
-      ...schemes[index],
+      ...existingScheme,
       ...updates,
-      id, // protect ID from alteration
-      lastVerified: getCurrentMonthYear(), // Automatically updated on edit
+      id,
+      lastVerified: getCurrentMonthYear(),
       documentsNeeded: Array.isArray(updates.documentsNeeded)
         ? updates.documentsNeeded.filter(Boolean)
         : typeof updates.documentsNeeded === "string"
         ? updates.documentsNeeded.split("\n").map((d: string) => d.trim()).filter(Boolean)
-        : schemes[index].documentsNeeded,
+        : existingScheme.documentsNeeded || [],
     };
 
-    schemes[index] = updatedScheme;
-    saveSchemes(schemes);
+    // 1. Sync to Supabase if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const rowData = mapSchemeToDatabaseRow(updatedScheme);
+        const { error: dbError } = await supabase
+          .from("schemes")
+          .update(rowData)
+          .eq("id", id);
+        if (dbError) {
+          console.warn("Supabase update warning:", dbError.message);
+        }
+      } catch (dbErr) {
+        console.warn("Failed to update in Supabase:", dbErr);
+      }
+    }
+
+    // 2. Keep local storage synced
+    if (index !== -1) {
+      schemes[index] = updatedScheme;
+      saveSchemes(schemes);
+    }
 
     return NextResponse.json({
       success: true,
@@ -223,22 +272,31 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const schemes = getStoredSchemes();
-    const index = schemes.findIndex((s) => s.id === id);
-
-    if (index === -1) {
-      return NextResponse.json(
-        { success: false, error: `Scheme with ID '${id}' not found.` },
-        { status: 404 }
-      );
+    // 1. Delete from Supabase if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error: dbError } = await supabase.from("schemes").delete().eq("id", id);
+        if (dbError) {
+          console.warn("Supabase delete warning:", dbError.message);
+        }
+      } catch (dbErr) {
+        console.warn("Failed to delete from Supabase:", dbErr);
+      }
     }
 
-    const removed = schemes.splice(index, 1);
-    saveSchemes(schemes);
+    // 2. Delete from local storage
+    const schemes = getStoredSchemes();
+    const index = schemes.findIndex((s) => s.id === id);
+    let removedName = id;
+    if (index !== -1) {
+      const removed = schemes.splice(index, 1);
+      removedName = removed[0]?.name || id;
+      saveSchemes(schemes);
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Scheme '${removed[0]?.name || id}' deleted successfully.`,
+      message: `Scheme '${removedName}' deleted successfully.`,
     });
   } catch (error: any) {
     console.error("Failed to delete scheme:", error);
